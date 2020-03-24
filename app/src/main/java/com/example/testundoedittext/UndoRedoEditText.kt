@@ -8,6 +8,7 @@ import android.text.TextUtils
 import android.text.TextWatcher
 import android.text.style.UnderlineSpan
 import android.util.AttributeSet
+import android.util.Log
 import android.widget.TextView
 import androidx.appcompat.widget.AppCompatEditText
 import java.util.*
@@ -17,15 +18,27 @@ open class UndoRedoEditText(context: Context, attrs: AttributeSet) :
 
     private var mUndoRedoHelper: UndoRedoHelper
 
+    var htmlString: String
+
     init {
         mUndoRedoHelper = UndoRedoHelper(this)
+        htmlString = ""
     }
 
     open fun undo() {
-        if (mUndoRedoHelper.canUndo) {
+//        if (mUndoRedoHelper.canUndo) {
+//            try {
+//                mUndoRedoHelper.undo()
+//            } catch (e: Exception) {
+//                Log.d("Trung", e.message)
+//            }
+//        }
+
+        if (mUndoRedoHelper.mTextView?.text.toString() != htmlString) {
             try {
                 mUndoRedoHelper.undo()
             } catch (e: Exception) {
+                Log.d("Trung", e.message!!)
             }
         }
     }
@@ -35,12 +48,17 @@ open class UndoRedoEditText(context: Context, attrs: AttributeSet) :
             try {
                 mUndoRedoHelper.redo()
             } catch (e: Exception) {
+                Log.d("Trung", e.message!!)
             }
         }
     }
 
     open fun clearHistory() {
         mUndoRedoHelper.clearHistory()
+    }
+
+    open fun setIsUndo(enable: Boolean) {
+        mUndoRedoHelper.mIsUndoOrRedo = enable
     }
 
     /*
@@ -65,15 +83,14 @@ open class UndoRedoEditText(context: Context, attrs: AttributeSet) :
      * @see UndoRedoHelper
      */
 
-    class UndoRedoHelper(private val mTextView: TextView?) {
-        private var mIsUndoOrRedo = false
+    class UndoRedoHelper(val mTextView: TextView?) {
+        var mIsUndoOrRedo = false
 
-        private val mEditHistory: EditHistory
+        val mEditHistory: EditHistory
 
         private val mChangeListener: EditTextChangeListener
 
-        val canUndo: Boolean
-            get() = (mEditHistory.mmPosition > 0)
+        val canUndo: Boolean get() = (mEditHistory.mmPosition > 0)
 
         val canRedo: Boolean
             get() = (mEditHistory.mmPosition < mEditHistory.mmHistory.size)
@@ -100,21 +117,161 @@ open class UndoRedoEditText(context: Context, attrs: AttributeSet) :
             val edit = mEditHistory.previous ?: return
 
             val editable = mTextView!!.editableText
-            val start = edit.start
-            val end = start + if (edit!!.after != null) edit.after.length else 0
+            var start = edit.start
+            var end = start + if (edit.after != "") edit.after.length else 0
 
-            mIsUndoOrRedo = true
-            editable.replace(start, end, edit.before)
-            mIsUndoOrRedo = false
+            val htmlString = mTextView.text.toString()
 
-            for (o in editable.getSpans(0, editable.length, UnderlineSpan::class.java)) {
-                editable.removeSpan(o)
+            val html = htmlString.toCharArray().toMutableList()
+            for (i in (html.size - 1) downTo 0) {
+                if (html[i] == '>') {
+                    for (j in (html.size - 2) downTo 0) {
+                        if (html[j] == '>') { // case <p>aaaa</p> => <p>
+                            start = j + 1
+                            edit.before = ""
+                            edit.after = htmlString.substring(start, html.size)
+                            edit.start = start
+                            mIsUndoOrRedo = true
+                            editable.replace(start, html.size, edit.before)
+                            mIsUndoOrRedo = false
+
+                            for (o in editable.getSpans(
+                                0,
+                                editable.length,
+                                UnderlineSpan::class.java
+                            )) {
+                                editable.removeSpan(o)
+                            }
+
+                            Selection.setSelection(editable, start + edit.before.length)
+                            return
+
+                        } else if (html[j] == '\n' || html[j] == ' ') { // case <p>aaaa</p> \n aaaa<p> => p>aaaa</p>
+                            start = j
+                            edit.before = ""
+                            edit.after = htmlString.substring(start, html.size)
+                            edit.start = start
+                            mIsUndoOrRedo = true
+                            editable.replace(start, html.size, edit.before)
+                            mIsUndoOrRedo = false
+
+                            for (o in editable.getSpans(
+                                0,
+                                editable.length,
+                                UnderlineSpan::class.java
+                            )) {
+                                editable.removeSpan(o)
+                            }
+
+                            Selection.setSelection(editable, start + edit.before.length)
+                            return
+                        } else if (html[j] == '<') {
+                            if (j == 0) {
+                                start = j
+                                edit.before = ""
+                                edit.after = htmlString.substring(start, html.size)
+                                edit.start = start
+                                mIsUndoOrRedo = true
+                                editable.replace(start, html.size, edit.before)
+                                mIsUndoOrRedo = false
+
+                                for (o in editable.getSpans(
+                                    0,
+                                    editable.length,
+                                    UnderlineSpan::class.java
+                                )) {
+                                    editable.removeSpan(o)
+                                }
+
+                                Selection.setSelection(editable, start + edit.before.length)
+                                return
+                            } else {
+                                if (html[j + 1] != '/') {
+                                    start = j
+                                    edit.before = ""
+                                    edit.after = htmlString.substring(start, html.size)
+                                    edit.start = start
+                                    mIsUndoOrRedo = true
+                                    editable.replace(start, html.size, edit.before)
+                                    mIsUndoOrRedo = false
+
+                                    for (o in editable.getSpans(
+                                        0,
+                                        editable.length,
+                                        UnderlineSpan::class.java
+                                    )) {
+                                        editable.removeSpan(o)
+                                    }
+
+                                    Selection.setSelection(editable, start + edit.before.length)
+                                    return
+                                }
+                            }
+                        }
+                    }
+                } else if (html[i] == '\n' || html[i] == ' ') { // case <p>aaa</p>aaaa \n bbbbb => <p>aaa</p>aaaa
+                    start = i
+                    edit.before = ""
+                    edit.after = htmlString.substring(start, html.size)
+                    edit.start = start
+                    mIsUndoOrRedo = true
+                    editable.replace(start, html.size, edit.before)
+                    mIsUndoOrRedo = false
+
+                    for (o in editable.getSpans(
+                        0,
+                        editable.length,
+                        UnderlineSpan::class.java
+                    )) {
+                        editable.removeSpan(o)
+                    }
+
+                    Selection.setSelection(editable, start + edit.before.length)
+                    return
+                } else {
+                    if (html[i] == '>') { // case <p>aaa</p>aaaa => <p>aaa</p>
+                        start = i + 1
+                        edit.before = ""
+                        edit.after = htmlString.substring(start, html.size)
+                        edit.start = start
+                        mIsUndoOrRedo = true
+                        editable.replace(start, html.size, edit.before)
+                        mIsUndoOrRedo = false
+
+                        for (o in editable.getSpans(
+                            0,
+                            editable.length,
+                            UnderlineSpan::class.java
+                        )) {
+                            editable.removeSpan(o)
+                        }
+
+                        Selection.setSelection(editable, start + edit.before.length)
+                        return
+                    } else {
+                        if (i == 0) {
+                            start = 0
+                            edit.before = ""
+                            edit.after = htmlString.substring(start, html.size)
+                            edit.start = start
+                            mIsUndoOrRedo = true
+                            editable.replace(start, html.size, edit.before)
+                            mIsUndoOrRedo = false
+
+                            for (o in editable.getSpans(
+                                0,
+                                editable.length,
+                                UnderlineSpan::class.java
+                            )) {
+                                editable.removeSpan(o)
+                            }
+
+                            Selection.setSelection(editable, start + edit.before.length)
+                            return
+                        }
+                    }
+                }
             }
-
-            Selection.setSelection(
-                editable,
-                if (edit.before == null) start else start + edit.before.length
-            )
         }
 
         fun redo() {
@@ -122,7 +279,7 @@ open class UndoRedoEditText(context: Context, attrs: AttributeSet) :
 
             val text = mTextView!!.editableText
             val start = edit.start
-            val end = start + if (edit!!.before != null) edit.before.length else 0
+            val end = start + if (edit.before != "") edit.before.length else 0
 
             mIsUndoOrRedo = true
             text.replace(start, end, edit.after)
@@ -134,12 +291,7 @@ open class UndoRedoEditText(context: Context, attrs: AttributeSet) :
                 text.removeSpan(o)
             }
 
-            Selection.setSelection(
-                text, if (edit.after == null)
-                    start
-                else
-                    start + edit.after.length
-            )
+            Selection.setSelection(text, if (edit.after == "") start else start + edit.after.length)
         }
 
         fun storePersistentState(editor: SharedPreferences.Editor, prefix: String) {
@@ -211,7 +363,7 @@ open class UndoRedoEditText(context: Context, attrs: AttributeSet) :
             INSERT, DELETE, PASTE, NOT_DEF
         }
 
-        private inner class EditHistory {
+        inner class EditHistory {
             val mmHistory = LinkedList<EditItem>()
             var mmPosition = 0
             var mmMaxHistorySize = -1
@@ -277,7 +429,7 @@ open class UndoRedoEditText(context: Context, attrs: AttributeSet) :
             }
         }
 
-        private data class EditItem(
+        data class EditItem(
             var start: Int,
             var before: CharSequence,
             var after: CharSequence
@@ -318,7 +470,7 @@ open class UndoRedoEditText(context: Context, attrs: AttributeSet) :
             private fun makeBatch(start: Int) {
                 val at = actionType
                 val editItem = mEditHistory.current
-                if (lastActionType != at || ActionType.PASTE == at || System.currentTimeMillis() - lastActionTime > 1000 || editItem == null) {
+                if (lastActionType != at || ActionType.PASTE == at || System.currentTimeMillis() - lastActionTime > 100 || editItem == null) {
                     mEditHistory.add(EditItem(start, mBeforeChange!!, mAfterChange!!))
                 } else {
                     if (at == ActionType.DELETE) {

@@ -3,19 +3,27 @@ package com.example.testundoedittext
 import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
-import android.view.View
-import android.widget.EditText
 import androidx.appcompat.app.AppCompatActivity
 
 
 class MainActivity : AppCompatActivity() {
     private lateinit var mEditText: UndoRedoEditText
+    val html = "<p>sasdasd</p>\n" +
+            "<p>asdasdasd</p>\n" +
+            "<p>asdasd</p>"
+
+//    val html = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
         mEditText = findViewById(R.id.editor)
+        mEditText.clearHistory()
+        mEditText.setIsUndo(true)
+        mEditText.setText(html)
+        mEditText.htmlString = html
+        mEditText.setIsUndo(false)
     }
 
 
