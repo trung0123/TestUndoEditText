@@ -19,10 +19,10 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         mEditText = findViewById(R.id.editor)
-        mEditText.clearHistory()
         mEditText.setIsUndo(true)
         mEditText.setText(html)
         mEditText.htmlString = html
+        mEditText.setPosStartUndo(html.length)
         mEditText.setIsUndo(false)
     }
 
@@ -48,5 +48,10 @@ class MainActivity : AppCompatActivity() {
             }
             else -> super.onOptionsItemSelected(item)
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        mEditText.clearHistory()
     }
 }
