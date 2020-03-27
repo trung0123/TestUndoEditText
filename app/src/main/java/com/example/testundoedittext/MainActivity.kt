@@ -19,11 +19,10 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         mEditText = findViewById(R.id.editor)
-        mEditText.setIsUndo(true)
         mEditText.setText(html)
-        mEditText.htmlString = html
-        mEditText.setPosStartUndo(html.length)
-        mEditText.setIsUndo(false)
+//        for (i in html.toCharArray()) {
+//            mEditText.append(i.toString())
+//        }
     }
 
 
