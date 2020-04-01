@@ -8,6 +8,7 @@ import androidx.appcompat.app.AppCompatActivity
 
 class MainActivity : AppCompatActivity() {
     private lateinit var mEditText: UndoRedoEditText
+//    private lateinit var mEditText: UndoRedo
     val html = "<p>sasdasd</p>\n" +
             "<p>asdasdasd</p>\n" +
             "<p>asdasd</p>"
@@ -20,9 +21,7 @@ class MainActivity : AppCompatActivity() {
 
         mEditText = findViewById(R.id.editor)
         mEditText.setText(html)
-//        for (i in html.toCharArray()) {
-//            mEditText.append(i.toString())
-//        }
+        mEditText.setOrderInitHtml(true)
     }
 
 
