@@ -13,7 +13,7 @@ import android.widget.TextView
 import androidx.appcompat.widget.AppCompatEditText
 import java.util.*
 
-open class UndoRedoEditText(context: Context, attrs: AttributeSet) :
+class UndoRedoEditText(context: Context, attrs: AttributeSet) :
     AppCompatEditText(context, attrs) {
 
     private var mUndoRedoHelper: UndoRedoHelper
@@ -117,7 +117,7 @@ open class UndoRedoEditText(context: Context, attrs: AttributeSet) :
                 }
                 for (i in to downTo from) {
                     val edit = mEditHistory.mmHistory[i]
-                    if (edit.start != editOrder.start || edit.after.toString() != editOrder.after.toString()) {
+                    if (edit.start != editOrder.start || edit.after != editOrder.after) {
                         list.add(edit)
                     }
                 }
@@ -129,7 +129,7 @@ open class UndoRedoEditText(context: Context, attrs: AttributeSet) :
                 }
                 for (i in to downTo from) {
                     val edit = mEditHistory.mmHistory[i]
-                    if (edit.start != editOrder.start || edit.before.toString() != editOrder.before.toString()) {
+                    if (edit.start != editOrder.start || edit.before != editOrder.before) {
                         list.add(edit)
                     }
                 }
@@ -178,50 +178,44 @@ open class UndoRedoEditText(context: Context, attrs: AttributeSet) :
             val listTemHistory = mutableListOf<EditItem>()
             val list = mutableListOf<EditItem>()
             listTemHistory.addAll(mEditHistory.mmHistory)
-            for (i in listTemHistory.indices) {
+            var i = 0
+            while (i < listTemHistory.size) {
                 val edit = listTemHistory[i]
                 val listFilter = mutableListOf<EditItem>()
                 if (i + 1 >= listTemHistory.size) break
                 var nextEdit = listTemHistory[i + 1]
-                if (nextEdit.start == edit.start) {
+                if (nextEdit.start == edit.start && !edit.order && !nextEdit.order) {
                     listFilter.add(edit)
                     listFilter.add(nextEdit)
+                    i++
 
                     for (j in (i + 2) until listTemHistory.size) {
                         nextEdit = listTemHistory[j]
-                        if (nextEdit.start == edit.start) {
+                        if (nextEdit.start == edit.start && !nextEdit.order) {
                             listFilter.add(nextEdit)
+                            i = j
                         } else {
                             break
                         }
                     }
-
-                    for (editFilter in listFilter) {
-                        if (editFilter.order) {
-                            list.add(editFilter)
-                            break
-                        }
-                    }
-                    if (list.size == 0) {
+                    if (listFilter.size > 1) {
                         val firstItem = listFilter[0]
                         val lastItem = listFilter[listFilter.size - 1]
-                        if(lastItem.after.length > lastItem.before.length){
-                            firstItem.apply {
-                                after = lastItem.after
+                        if (lastItem.after.length > lastItem.before.length) {
+                            if (lastItem.after != firstItem.before) {
+                                list.addAll(listFilter)
                             }
-                        } else{
-                            firstItem.apply {
-                                before = lastItem.before
-                            }
-                        }
 
-                        if (firstItem.before != firstItem.after) {
-                            list.add(firstItem)
+                        } else {
+                            if (lastItem.before != firstItem.after) {
+                                list.addAll(listFilter)
+                            }
                         }
                     }
                     listFilter.removeAll(list)
                     mEditHistory.mmHistory.removeAll(listFilter)
                 }
+                i++
             }
         }
 
@@ -233,175 +227,130 @@ open class UndoRedoEditText(context: Context, attrs: AttributeSet) :
                 if (!s.order) {
                     if (s.after.length > s.before.length) {
                         sTemp = sTemp.plus(s.after.toString())
-                        if (s.after.toString() == ">") {
-                            var sTemp1Tag = ""
-                            for (j in (i - 1) downTo 0) {
-                                val s1 = mEditHistory.mmHistory[j]
-                                if (!s1.order) {
-                                    if (s1.after.length > s1.before.length) {
+                        when (s.after.toString()) {
+                            ">" -> {
+                                var sTemp1Tag = ""
+                                for (j in (i - 1) downTo 0) {
+                                    val s1 = mEditHistory.mmHistory[j]
+                                    if (!s1.order
+                                        && s1.after.length > s1.before.length
+                                    ) {
                                         val s1Temp = s1.after.toString()
                                         sTemp = sTemp.plus(s1Temp)
                                         if (s1.start + s1Temp.length + sTemp1Tag.length == s.start) {
                                             sTemp1Tag = sTemp1Tag.plus(s1Temp)
-                                            if (s1Temp == ">") {
-                                                var sTempTag = ""
-                                                for (k in (j - 1) downTo 0) {
-                                                    val s2 = mEditHistory.mmHistory[k]
-                                                    if (!s2.order) {
-                                                        if (s2.after.length > s2.before.length) {
-                                                            val s2Temp = s2.after.toString()
-                                                            if (s2.start + s2Temp.length + sTempTag.length == s1.start) {
-                                                                if (s2Temp == ">") break
-                                                                if (s2Temp == "<") {
-                                                                    sTempTag = sTempTag.reversed()
-                                                                    if (!TextUtils.isEmpty(sTempTag)) {
-                                                                        sTemp = sTemp.reversed()
-                                                                        sTemp = sTemp.substring(
-                                                                            1,
-                                                                            sTemp.length
-                                                                        )
-                                                                        undoText(
-                                                                            j + 1,
-                                                                            (j + 1) + sTemp.length - 1,
-                                                                            sTemp
-                                                                        )
-                                                                        return
-                                                                    }
-                                                                } else {
-                                                                    sTempTag = sTempTag.plus(s2Temp)
+                                            when (s1Temp) {
+                                                ">" -> {
+                                                    var sTempTag = ""
+                                                    for (k in (j - 1) downTo 0) {
+                                                        val s2 = mEditHistory.mmHistory[k]
+                                                        val s2Temp = s2.after.toString()
+                                                        if (!s2.order
+                                                            && s2.after.length > s2.before.length
+                                                            && s2.start + s2Temp.length + sTempTag.length == s1.start
+                                                        ) {
+                                                            if (s2Temp == ">") break
+                                                            if (s2Temp == "<") {
+                                                                sTempTag = sTempTag.reversed()
+                                                                if (!TextUtils.isEmpty(sTempTag)) {
+                                                                    sTemp = sTemp.reversed()
+                                                                    sTemp = sTemp.substring(
+                                                                        1,
+                                                                        sTemp.length
+                                                                    )
+                                                                    undoText(
+                                                                        j + 1,
+                                                                        j + sTemp.length,
+                                                                        sTemp
+                                                                    )
+                                                                    return
                                                                 }
                                                             } else {
-                                                                sTemp = sTemp.reversed()
-                                                                undoText(
-                                                                    j,
-                                                                    j + sTemp.length - 1,
-                                                                    sTemp
-                                                                )
-                                                                return
+                                                                sTempTag = sTempTag.plus(s2Temp)
                                                             }
                                                         } else {
                                                             sTemp = sTemp.reversed()
                                                             undoText(j, j + sTemp.length - 1, sTemp)
                                                             return
                                                         }
-                                                    } else {
+                                                    }
+                                                }
+                                                "<" -> {
+                                                    var s3Temp = ""
+                                                    for (k in i - 1 downTo j + 1) {
+                                                        val s3 = mEditHistory.mmHistory[k]
+                                                        s3Temp = s3Temp.plus(s3.after.toString())
+                                                    }
+                                                    s3Temp = s3Temp.reversed()
+                                                    if (s3Temp.isNotEmpty() && !s3Temp.contains("/")) {
                                                         sTemp = sTemp.reversed()
-                                                        undoText(j, j + sTemp.length - 1, sTemp)
+                                                        undoText(j, i, sTemp)
                                                         return
                                                     }
                                                 }
-                                            } else if (s1Temp == "<") {
-                                                var s3Temp = ""
-                                                for (k in i - 1 downTo j + 1) {
-                                                    val s3 = mEditHistory.mmHistory[k]
-                                                    s3Temp = s3Temp.plus(s3.after.toString())
-                                                }
-                                                s3Temp = s3Temp.reversed()
-                                                if (s3Temp.isNotEmpty() && !s3Temp.contains("/")) {
+                                                "\n", " " -> {
                                                     sTemp = sTemp.reversed()
                                                     undoText(j, i, sTemp)
                                                     return
                                                 }
-                                            } else if (s1Temp == "\n" || s1Temp == " ") {
-                                                sTemp = sTemp.reversed()
-                                                undoText(j, i, sTemp)
-                                                return
                                             }
                                         } else {
                                             sTemp = sTemp.reversed()
                                             sTemp = sTemp.substring(1, sTemp.length)
-                                            undoText(j + 1, (j + 1) + sTemp.length - 1, sTemp)
+                                            undoText(j + 1, j + sTemp.length, sTemp)
                                         }
                                     } else {
                                         sTemp = sTemp.reversed()
-                                        undoText(j + 1, (j + 1) + sTemp.length - 1, sTemp)
+                                        undoText(j + 1, j + sTemp.length, sTemp)
                                         return
                                     }
-                                } else {
-                                    sTemp = sTemp.reversed()
-                                    undoText(j + 1, (j + 1) + sTemp.length - 1, sTemp)
-                                    return
-                                }
 
+                                }
                             }
-                        } else if (s.after.toString() == "\n" || s.after.toString() == " ") {
-                            sTemp = sTemp.reversed()
-                            undoText(i, i + sTemp.length - 1, sTemp)
-                            return
-                        } else {
-                            val s5 = mEditHistory.mmHistory[i - 1]
-                            if (!s5.order) {
-                                if (s5.after.length > s5.before.length) {
-                                    val s5Temp = s5.after.toString()
-                                    if (s5.start + s5Temp.length == s.start) {
-                                        if (s5Temp == ">") {
-                                            var sTempTag = ""
-                                            for (j in (i - 2) downTo 0) {
-                                                val s6 = mEditHistory.mmHistory[j]
-                                                if (!s6.order) {
-                                                    if (s6.after.length > s6.before.length) {
-                                                        val s6Temp = s6.after.toString()
-                                                        if (s6.start + s6Temp.length + sTempTag.length == s5.start) {
-                                                            if (s6Temp == "<") {
-                                                                sTempTag = sTempTag.reversed()
-                                                                if (!TextUtils.isEmpty(sTempTag)) {
-                                                                    sTemp = sTemp.reversed()
-                                                                    undoText(
-                                                                        i,
-                                                                        i + sTemp.length - 1,
-                                                                        sTemp
-                                                                    )
-                                                                    return
-                                                                }
-                                                            } else {
-                                                                sTempTag = sTempTag.plus(s6Temp)
-                                                            }
-                                                        } else {
-                                                            sTemp = sTemp.plus(s5Temp)
-                                                            sTemp = sTemp.reversed()
-                                                            undoText(
-                                                                i - 1,
-                                                                (i - 1) + sTemp.length - 1,
-                                                                sTemp
-                                                            )
-                                                            return
-                                                        }
-                                                    } else {
-                                                        sTemp = sTemp.plus(s5Temp)
+                            "\n", " " -> {
+                                sTemp = sTemp.reversed()
+                                undoText(i, i + sTemp.length - 1, sTemp)
+                                return
+                            }
+                            else -> {
+                                val s5 = mEditHistory.mmHistory[i - 1]
+                                val s5Temp = s5.after.toString()
+                                if (!s5.order
+                                    && s5.after.length > s5.before.length
+                                    && s5.start + s5Temp.length == s.start
+                                ) {
+                                    if (s5Temp == ">") {
+                                        var sTempTag = ""
+                                        for (j in (i - 2) downTo 0) {
+                                            val s6 = mEditHistory.mmHistory[j]
+                                            val s6Temp = s6.after.toString()
+                                            if (!s6.order
+                                                && s6.after.length > s6.before.length
+                                                && s6.start + s6Temp.length + sTempTag.length == s5.start
+                                            ) {
+                                                if (s6Temp == "<") {
+                                                    sTempTag = sTempTag.reversed()
+                                                    if (!TextUtils.isEmpty(sTempTag)) {
                                                         sTemp = sTemp.reversed()
-                                                        undoText(
-                                                            i - 1,
-                                                            (i - 1) + sTemp.length - 1,
-                                                            sTemp
-                                                        )
+                                                        undoText(i, i + sTemp.length - 1, sTemp)
                                                         return
                                                     }
                                                 } else {
-                                                    sTemp = sTemp.plus(s5Temp)
-                                                    sTemp = sTemp.reversed()
-                                                    undoText(
-                                                        i - 1,
-                                                        (i - 1) + sTemp.length - 1,
-                                                        sTemp
-                                                    )
-                                                    return
+                                                    sTempTag = sTempTag.plus(s6Temp)
                                                 }
+                                            } else {
+                                                sTemp = sTemp.plus(s5Temp)
+                                                sTemp = sTemp.reversed()
+                                                undoText(i - 1, i + sTemp.length - 2, sTemp)
+                                                return
                                             }
                                         }
-                                    } else {
-                                        sTemp = sTemp.reversed()
-                                        undoText(i, i + sTemp.length - 1, sTemp)
-                                        return
                                     }
                                 } else {
                                     sTemp = sTemp.reversed()
                                     undoText(i, i + sTemp.length - 1, sTemp)
                                     return
                                 }
-                            } else {
-                                sTemp = sTemp.reversed()
-                                undoText(i, i + sTemp.length - 1, sTemp)
-                                return
                             }
                         }
                     } else {
