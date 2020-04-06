@@ -13,7 +13,7 @@ import android.widget.TextView
 import androidx.appcompat.widget.AppCompatEditText
 import java.util.*
 
-class UndoRedoEditText(context: Context, attrs: AttributeSet) :
+open class UndoRedoEditText(context: Context, attrs: AttributeSet) :
     AppCompatEditText(context, attrs) {
 
     private var mUndoRedoHelper: UndoRedoHelper
@@ -46,6 +46,10 @@ class UndoRedoEditText(context: Context, attrs: AttributeSet) :
 
     open fun clearHistory() {
         mUndoRedoHelper.clearHistory()
+    }
+
+    open fun disconnect() {
+        mUndoRedoHelper.disconnect()
     }
 
     /*
@@ -107,39 +111,11 @@ class UndoRedoEditText(context: Context, attrs: AttributeSet) :
             mEditHistory.clear()
         }
 
-        private fun undoText(from: Int, to: Int, s: String) {
-            val list = mutableListOf<EditItem>()
-            val editOrder = mEditHistory.mmHistory[from]
-            if (editOrder.after.length > editOrder.before.length) {
-                editOrder.apply {
-                    after = s
-                    order = true
-                }
-                for (i in to downTo from) {
-                    val edit = mEditHistory.mmHistory[i]
-                    if (edit.start != editOrder.start || edit.after != editOrder.after) {
-                        list.add(edit)
-                    }
-                }
-            } else {
-                editOrder.apply {
-                    before = s
-                    order = true
-                    start -= (before.length - 1)
-                }
-                for (i in to downTo from) {
-                    val edit = mEditHistory.mmHistory[i]
-                    if (edit.start != editOrder.start || edit.before != editOrder.before) {
-                        list.add(edit)
-                    }
-                }
-            }
-
-            mEditHistory.mmHistory.removeAll(list)
-            mEditHistory.mmPosition = mEditHistory.mmHistory.size
-            undo()
-        }
-
+        /**
+         * Case edit(start=5, before=aa, after=aab, order=false) => edit(start=7, before=, after=b, order=false)
+         * Case edit(start=5, before=aab, after=aa, order=false) => edit(start=7, before=b, after=, order=false)
+         * Case edit(start=5, before=a, after=a, order=false) => remove edit
+         */
         private fun standardizedList() {
             val list = mutableListOf<EditItem>()
             for (i in mEditHistory.mmHistory.indices) {
@@ -174,6 +150,10 @@ class UndoRedoEditText(context: Context, attrs: AttributeSet) :
             standardizedList2()
         }
 
+        /**
+         * Case edit(start=5, before=, after=b, order=false), nextEdit(start=5, before=b, after=, order=false)
+         * => Remove edit, nextEdit
+         */
         private fun standardizedList2() {
             val listTemHistory = mutableListOf<EditItem>()
             val list = mutableListOf<EditItem>()
@@ -219,8 +199,41 @@ class UndoRedoEditText(context: Context, attrs: AttributeSet) :
             }
         }
 
-        fun undo() {
-            standardizedList()
+        /**
+         * Replace item from position and remove items (from + 1 -> to) position
+         */
+        private fun replaceAndRemoveByPosition(from: Int, to: Int, s: String) {
+            val list = mutableListOf<EditItem>()
+            val editOrder = mEditHistory.mmHistory[from]
+            if (editOrder.after.length > editOrder.before.length) {
+                editOrder.apply {
+                    after = s
+                    order = true
+                }
+            } else {
+                editOrder.apply {
+                    before = s
+                    order = true
+                    start -= (before.length - 1)
+                }
+            }
+
+            for (i in to downTo from + 1) {
+                list.add(mEditHistory.mmHistory[i])
+            }
+
+            mEditHistory.mmHistory.removeAll(list)
+            mEditHistory.mmPosition = mEditHistory.mmHistory.size
+            processArrayHistory()
+        }
+
+        /**
+         * Input " " or "/n" or tag html => lost a piece of text
+         * Case aaa bbbb => aaa
+         * Case aaa/n => aaa
+         * Case <p>aaa</p> => <p>
+         */
+        private fun processArrayHistory() {
             var sTemp = ""
             for (i in (mEditHistory.mmHistory.size - 1) downTo 0) {
                 val s = mEditHistory.mmHistory[i]
@@ -232,9 +245,7 @@ class UndoRedoEditText(context: Context, attrs: AttributeSet) :
                                 var sTemp1Tag = ""
                                 for (j in (i - 1) downTo 0) {
                                     val s1 = mEditHistory.mmHistory[j]
-                                    if (!s1.order
-                                        && s1.after.length > s1.before.length
-                                    ) {
+                                    if (!s1.order && s1.after.length > s1.before.length) {
                                         val s1Temp = s1.after.toString()
                                         sTemp = sTemp.plus(s1Temp)
                                         if (s1.start + s1Temp.length + sTemp1Tag.length == s.start) {
@@ -258,7 +269,7 @@ class UndoRedoEditText(context: Context, attrs: AttributeSet) :
                                                                         1,
                                                                         sTemp.length
                                                                     )
-                                                                    undoText(
+                                                                    replaceAndRemoveByPosition(
                                                                         j + 1,
                                                                         j + sTemp.length,
                                                                         sTemp
@@ -270,7 +281,11 @@ class UndoRedoEditText(context: Context, attrs: AttributeSet) :
                                                             }
                                                         } else {
                                                             sTemp = sTemp.reversed()
-                                                            undoText(j, j + sTemp.length - 1, sTemp)
+                                                            replaceAndRemoveByPosition(
+                                                                j,
+                                                                j + sTemp.length - 1,
+                                                                sTemp
+                                                            )
                                                             return
                                                         }
                                                     }
@@ -284,24 +299,28 @@ class UndoRedoEditText(context: Context, attrs: AttributeSet) :
                                                     s3Temp = s3Temp.reversed()
                                                     if (s3Temp.isNotEmpty() && !s3Temp.contains("/")) {
                                                         sTemp = sTemp.reversed()
-                                                        undoText(j, i, sTemp)
+                                                        replaceAndRemoveByPosition(j, i, sTemp)
                                                         return
                                                     }
                                                 }
                                                 "\n", " " -> {
                                                     sTemp = sTemp.reversed()
-                                                    undoText(j, i, sTemp)
+                                                    replaceAndRemoveByPosition(j, i, sTemp)
                                                     return
                                                 }
                                             }
                                         } else {
                                             sTemp = sTemp.reversed()
                                             sTemp = sTemp.substring(1, sTemp.length)
-                                            undoText(j + 1, j + sTemp.length, sTemp)
+                                            replaceAndRemoveByPosition(
+                                                j + 1,
+                                                j + sTemp.length,
+                                                sTemp
+                                            )
                                         }
                                     } else {
                                         sTemp = sTemp.reversed()
-                                        undoText(j + 1, j + sTemp.length, sTemp)
+                                        replaceAndRemoveByPosition(j + 1, j + sTemp.length, sTemp)
                                         return
                                     }
 
@@ -309,7 +328,7 @@ class UndoRedoEditText(context: Context, attrs: AttributeSet) :
                             }
                             "\n", " " -> {
                                 sTemp = sTemp.reversed()
-                                undoText(i, i + sTemp.length - 1, sTemp)
+                                replaceAndRemoveByPosition(i, i + sTemp.length - 1, sTemp)
                                 return
                             }
                             else -> {
@@ -332,7 +351,11 @@ class UndoRedoEditText(context: Context, attrs: AttributeSet) :
                                                     sTempTag = sTempTag.reversed()
                                                     if (!TextUtils.isEmpty(sTempTag)) {
                                                         sTemp = sTemp.reversed()
-                                                        undoText(i, i + sTemp.length - 1, sTemp)
+                                                        replaceAndRemoveByPosition(
+                                                            i,
+                                                            i + sTemp.length - 1,
+                                                            sTemp
+                                                        )
                                                         return
                                                     }
                                                 } else {
@@ -341,14 +364,18 @@ class UndoRedoEditText(context: Context, attrs: AttributeSet) :
                                             } else {
                                                 sTemp = sTemp.plus(s5Temp)
                                                 sTemp = sTemp.reversed()
-                                                undoText(i - 1, i + sTemp.length - 2, sTemp)
+                                                replaceAndRemoveByPosition(
+                                                    i - 1,
+                                                    i + sTemp.length - 2,
+                                                    sTemp
+                                                )
                                                 return
                                             }
                                         }
                                     }
                                 } else {
                                     sTemp = sTemp.reversed()
-                                    undoText(i, i + sTemp.length - 1, sTemp)
+                                    replaceAndRemoveByPosition(i, i + sTemp.length - 1, sTemp)
                                     return
                                 }
                             }
@@ -358,23 +385,27 @@ class UndoRedoEditText(context: Context, attrs: AttributeSet) :
                         val s5 = mEditHistory.mmHistory[i - 1]
                         if (!s5.order) {
                             if (s5.after.length > s5.before.length) {
-                                undoText(i, i + sTemp.length - 1, sTemp)
+                                replaceAndRemoveByPosition(i, i + sTemp.length - 1, sTemp)
                                 return
                             }
                         } else {
-                            undoText(i, i + sTemp.length - 1, sTemp)
+                            replaceAndRemoveByPosition(i, i + sTemp.length - 1, sTemp)
                             return
                         }
                     }
                 }
             }
+        }
 
+        fun undo() {
+            standardizedList()
+            processArrayHistory()
 
             val edit = mEditHistory.previous ?: return
 
             val editable = mTextView!!.editableText
             val start = edit.start
-            val end = start + if (edit!!.after != null) edit.after.length else 0
+            val end = start + if (edit.after != "") edit.after.length else 0
 
             mIsUndoOrRedo = true
             editable.replace(start, end, edit.before)
@@ -386,7 +417,7 @@ class UndoRedoEditText(context: Context, attrs: AttributeSet) :
 
             Selection.setSelection(
                 editable,
-                if (edit.before == null) start else start + edit.before.length
+                if (edit.before == "") start else start + edit.before.length
             )
         }
 
@@ -395,7 +426,7 @@ class UndoRedoEditText(context: Context, attrs: AttributeSet) :
 
             val text = mTextView!!.editableText
             val start = edit.start
-            val end = start + if (edit!!.before != null) edit.before.length else 0
+            val end = start + if (edit.before != "") edit.before.length else 0
 
             mIsUndoOrRedo = true
             text.replace(start, end, edit.after)
@@ -407,31 +438,24 @@ class UndoRedoEditText(context: Context, attrs: AttributeSet) :
                 text.removeSpan(o)
             }
 
-            Selection.setSelection(
-                text, if (edit.after == null)
-                    start
-                else
-                    start + edit.after.length
-            )
+            Selection.setSelection(text, if (edit.after == "") start else start + edit.after.length)
         }
 
         fun storePersistentState(editor: SharedPreferences.Editor, prefix: String) {
             // Store hash code of text in the editor so that we can check if the
             // editor contents has changed.
-            editor.putString(prefix + ".hash", prefix.hashCode().toString())
-            editor.putInt(prefix + ".maxSize", mEditHistory.mmMaxHistorySize)
-            editor.putInt(prefix + ".position", mEditHistory.mmPosition)
-            editor.putInt(prefix + ".size", mEditHistory.mmHistory.size)
+            editor.putString("$prefix.hash", prefix.hashCode().toString())
+            editor.putInt("$prefix.maxSize", mEditHistory.mmMaxHistorySize)
+            editor.putInt("$prefix.position", mEditHistory.mmPosition)
+            editor.putInt("$prefix.size", mEditHistory.mmHistory.size)
 
-            var i = 0
-            for (ei in mEditHistory.mmHistory) {
-                val pre = prefix + "." + i
+            for ((i, ei) in mEditHistory.mmHistory.withIndex()) {
+                val pre = "$prefix.$i"
 
-                editor.putInt(pre + ".start", ei.start)
-                editor.putString(pre + ".before", ei.before.toString())
-                editor.putString(pre + ".after", ei.after.toString())
+                editor.putInt("$pre.start", ei.start)
+                editor.putString("$pre.before", ei.before.toString())
+                editor.putString("$pre.after", ei.after.toString())
 
-                i++
             }
         }
 
@@ -445,7 +469,7 @@ class UndoRedoEditText(context: Context, attrs: AttributeSet) :
         }
 
         private fun doRestorePersistentState(sp: SharedPreferences, prefix: String): Boolean {
-            val hash = sp.getString(prefix + ".hash", null) ?: // No state to be restored.
+            val hash = sp.getString("$prefix.hash", null) ?: // No state to be restored.
             return true
 
             if (Integer.valueOf(hash) != prefix.hashCode()) {
@@ -453,19 +477,19 @@ class UndoRedoEditText(context: Context, attrs: AttributeSet) :
             }
 
             mEditHistory.clear()
-            mEditHistory.mmMaxHistorySize = sp.getInt(prefix + ".maxSize", -1)
+            mEditHistory.mmMaxHistorySize = sp.getInt("$prefix.maxSize", -1)
 
-            val count = sp.getInt(prefix + ".size", -1)
+            val count = sp.getInt("$prefix.size", -1)
             if (count == -1) {
                 return false
             }
 
             for (i in 0 until count) {
-                val pre = prefix + "." + i
+                val pre = "$prefix.$i"
 
-                val start = sp.getInt(pre + ".start", -1)
-                val before = sp.getString(pre + ".before", null)
-                val after = sp.getString(pre + ".after", null)
+                val start = sp.getInt("$pre.start", -1)
+                val before = sp.getString("$pre.before", null)
+                val after = sp.getString("$pre.after", null)
 
                 if (start == -1 || before == null || after == null) {
                     return false
@@ -473,7 +497,7 @@ class UndoRedoEditText(context: Context, attrs: AttributeSet) :
                 mEditHistory.add(EditItem(start, before, after, false))
             }
 
-            mEditHistory.mmPosition = sp.getInt(prefix + ".position", -1)
+            mEditHistory.mmPosition = sp.getInt("$prefix.position", -1)
             return mEditHistory.mmPosition != -1
 
         }

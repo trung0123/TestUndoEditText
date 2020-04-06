@@ -8,7 +8,8 @@ import androidx.appcompat.app.AppCompatActivity
 
 class MainActivity : AppCompatActivity() {
     private lateinit var mEditText: UndoRedoEditText
-//    private lateinit var mEditText: UndoRedo
+
+    //    private lateinit var mEditText: UndoRedo
     val html = "<p>sasdasd</p>\n" +
             "<p>asdasdasd</p>\n" +
             "<p>asdasd</p>"
@@ -51,5 +52,6 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         mEditText.clearHistory()
+        mEditText.disconnect()
     }
 }
